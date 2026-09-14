@@ -1,0 +1,1784 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2027년 방과후돌봄 예산편성요구안 대시보드 (Realtime Database 연동)</title>
+  
+  <!-- Chart.js 및 플러그인 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+
+  <!-- Firebase Realtime Database 전용 SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+  <style>
+    :root {
+      --sunrays: #F8D4A2;
+      --tea-rose: #E0AFAA;
+      --morning-mist: #B1BEB7;
+      --canyon-sunset: #E0927B;
+      --lilypad: #5D7A78;
+      --brass: #D09E57;
+      
+      --bg-cream: #FBF9F5;
+      --card-bg: #FFFFFF;
+      --text-main: #2F3E46;
+      --text-muted: #526760;
+      --border: #E8E3DA;
+      --border-dark: #D4CDBC;
+      --shadow-sm: 0 2px 4px rgba(93, 122, 120, 0.05);
+      --shadow-md: 0 4px 12px rgba(93, 122, 120, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans KR', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-cream);
+      color: var(--text-main);
+      line-height: 1.45;
+      padding-bottom: 50px;
+      font-size: 15px;
+    }
+
+    header {
+      background: linear-gradient(135deg, #5D7A78 0%, #354E4C 100%);
+      color: white;
+      padding: 22px 32px;
+      box-shadow: var(--shadow-md);
+      border-bottom: 5px solid var(--canyon-sunset);
+    }
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .badge-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 14px;
+      border-radius: 9999px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .badge-dept { background-color: var(--morning-mist); color: #2F3E46; }
+    .badge-sub { background-color: var(--sunrays); color: #5D4018; }
+    
+    .sync-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      border-radius: 20px;
+      font-size: 13.5px;
+      font-weight: 700;
+      background-color: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: #FFFFFF;
+      transition: all 0.3s;
+    }
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background-color: #10B981;
+      display: inline-block;
+      box-shadow: 0 0 8px #10B981;
+    }
+    .status-dot.syncing {
+      background-color: #F59E0B;
+      box-shadow: 0 0 8px #F59E0B;
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 4px;
+      color: #FFFFFF;
+    }
+    .subtitle {
+      font-size: 15px;
+      color: #F1E9DC;
+      font-weight: 500;
+    }
+
+    .container {
+      width: 98%;
+      max-width: 1680px;
+      margin: 0 auto;
+      padding: 18px 12px;
+    }
+
+    .grid-kpi-6 {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    @media (max-width: 1400px) { .grid-kpi-6 { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 768px) { .grid-kpi-6 { grid-template-columns: repeat(2, 1fr); } }
+
+    .kpi-card {
+      background: var(--card-bg);
+      border-radius: 10px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 5px;
+    }
+    .kpi-card.c-morning-mist::before { background-color: var(--morning-mist); }
+    .kpi-card.c-sunrays::before { background-color: var(--sunrays); }
+    .kpi-card.c-brass::before { background-color: var(--brass); }
+    .kpi-card.c-lilypad-hero::before { background-color: var(--lilypad); height: 6px; }
+    .kpi-card.c-canyon-sunset::before { background-color: var(--canyon-sunset); height: 6px; }
+    .kpi-card.c-tea-rose::before { background-color: #B56B58; height: 6px; }
+
+    .kpi-card.highlight-target {
+      background: linear-gradient(180deg, #FFFFFF 0%, #EFF5F4 100%);
+      border: 2px solid var(--lilypad);
+    }
+    .kpi-card.highlight-diff1 {
+      background: linear-gradient(180deg, #FFFFFF 0%, #FDF4F1 100%);
+      border: 2px solid var(--canyon-sunset);
+    }
+    .kpi-card.highlight-diff2 {
+      background: linear-gradient(180deg, #FFFFFF 0%, #FAF0EB 100%);
+      border: 2px solid #C47963;
+    }
+
+    .kpi-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .kpi-value-thousand {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.3px;
+    }
+    .kpi-value-eok {
+      font-size: 15px;
+      font-weight: 700;
+      margin-top: 6px;
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background-color: var(--bg-cream);
+      color: var(--text-main);
+      border: 1px solid var(--border);
+    }
+    .kpi-value-eok.eok-hero { background-color: #5D7A78; color: #FFFFFF; border: none; font-weight: 800; }
+    .kpi-value-eok.eok-sunset { background-color: #E0927B; color: #FFFFFF; border: none; font-weight: 800; }
+    .kpi-value-eok.eok-rose { background-color: #B56B58; color: #FFFFFF; border: none; font-weight: 800; }
+
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      border-bottom: 2px solid var(--border-dark);
+      margin-bottom: 16px;
+    }
+    .tab-btn {
+      padding: 10px 22px;
+      background: none;
+      border: none;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 4px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.15s;
+    }
+    .tab-btn.active {
+      color: var(--canyon-sunset);
+      border-color: var(--canyon-sunset);
+    }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .col-12 { grid-column: span 12; }
+    .col-7 { grid-column: span 7; }
+    .col-5 { grid-column: span 5; }
+
+    @media (max-width: 1100px) { .col-7, .col-5 { grid-column: span 12; } }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      padding: 18px 20px;
+    }
+    .card-title {
+      font-size: 17px;
+      font-weight: 800;
+      color: #1F2D2D;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-left: 5px solid var(--canyon-sunset);
+      padding-left: 10px;
+      flex-wrap: wrap;
+    }
+    .unit-tag { font-size: 15px; font-weight: 600; color: var(--text-muted); }
+    .editable-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background-color: #FEF3C7;
+      color: #92400E;
+      border: 1px solid #FCD34D;
+      padding: 3px 9px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .chart-container { position: relative; width: 100%; height: 330px; }
+
+    .table-container {
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #FFFFFF;
+      overflow: hidden;
+      width: 100%;
+    }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 15px; }
+    thead th {
+      background-color: #F4EFEB;
+      color: #2F3E46;
+      font-weight: 800;
+      padding: 10px 12px;
+      border-bottom: 2px solid var(--border-dark);
+      font-size: 15px;
+      line-height: 1.3;
+    }
+    tbody td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-main);
+      font-size: 15px;
+      vertical-align: middle;
+      line-height: 1.35;
+    }
+    tbody tr:hover { background-color: #FAF6EF; }
+    tbody tr.total-row {
+      background-color: #F7EFE4;
+      font-weight: 800;
+      border-top: 2px solid var(--canyon-sunset);
+    }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+
+    .eok-sub-block {
+      display: block;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+    .eok-sub-block.diff-up { color: #B23B1E; }
+    .eok-sub-block.diff-rose { color: #B56B58; }
+    .eok-sub-block.hero-lily { color: var(--lilypad); }
+
+    .diff-pill {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 15px;
+      font-weight: 800;
+    }
+    .diff-pill.up { background-color: #FDF1EE; color: #B23B1E; border: 1px solid #F6CEBF; }
+
+    .editable-cell {
+      outline: none;
+      transition: background-color 0.15s, box-shadow 0.15s;
+      border-radius: 4px;
+      padding: 2px 4px;
+      cursor: text;
+    }
+    .editable-cell:hover { background-color: #FFFBEB; box-shadow: 0 0 0 1px #FCD34D; }
+    .editable-cell:focus { background-color: #FFFFFF; box-shadow: 0 0 0 2px var(--canyon-sunset); }
+
+    /* 주요 사업 물량 줄바꿈 지원 */
+    .desc-multiline {
+      white-space: pre-wrap !important;
+      word-break: break-word;
+      line-height: 1.45;
+      min-width: 220px;
+    }
+
+    .multi-filter-container { position: relative; display: inline-block; }
+    .multi-filter-btn {
+      padding: 6px 14px;
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--text-main);
+      background-color: #FFFFFF;
+      border: 1.5px solid var(--lilypad);
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      user-select: none;
+    }
+    .multi-filter-btn:hover { background-color: #F9FBFB; border-color: var(--canyon-sunset); }
+    .multi-filter-btn .arrow-icon { font-size: 11px; transition: transform 0.2s; }
+    .multi-filter-btn.open .arrow-icon { transform: rotate(180deg); }
+    .multi-filter-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 5px);
+      left: 0;
+      width: 290px;
+      max-height: 380px;
+      overflow-y: auto;
+      background: #FFFFFF;
+      border: 1.5px solid var(--border-dark);
+      border-radius: 8px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+      z-index: 1200;
+      padding: 8px 10px;
+    }
+    .multi-filter-menu.show { display: block; }
+    .multi-filter-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+      border-bottom: 1px dashed var(--border);
+    }
+    .filter-quick-btn {
+      background: #F3F4F6;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .filter-quick-btn:hover { background: var(--lilypad); color: #FFFFFF; }
+    .filter-option-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 6px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--text-main);
+      transition: background 0.1s;
+    }
+    .filter-option-item:hover { background-color: #F4EFEB; }
+    .filter-option-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--lilypad); cursor: pointer; }
+
+    .btn-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background-color: var(--lilypad);
+      color: #FFFFFF;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 14.5px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.15s;
+    }
+    .btn-action:hover { background-color: #4B6462; }
+
+    .btn-save-now {
+      background-color: var(--canyon-sunset);
+      box-shadow: 0 2px 4px rgba(224, 146, 123, 0.25);
+    }
+    .btn-save-now:hover { background-color: #C87A63; }
+
+    .btn-sub-add {
+      background-color: #EBF2F1;
+      color: var(--lilypad);
+      border: 1px solid #C1D3D1;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      white-space: nowrap;
+    }
+    .btn-sub-add:hover { background-color: var(--lilypad); color: #FFFFFF; }
+
+    .btn-doc-view {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--lilypad);
+      text-decoration: underline;
+      font-weight: 700;
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-size: 15px;
+      padding: 0;
+    }
+    .btn-doc-view:hover { color: var(--canyon-sunset); }
+
+    .btn-del {
+      background-color: #F8D7DA;
+      color: #842029;
+      border: 1px solid #F5C2C7;
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .sub-item-row { background-color: #FAF8F5; }
+    .sub-item-row td { border-bottom: 1px dashed var(--border); }
+    .sub-title-indent { padding-left: 24px; position: relative; }
+    .sub-title-indent::before {
+      content: '└';
+      position: absolute;
+      left: 10px;
+      color: var(--canyon-sunset);
+      font-weight: 700;
+    }
+
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(0, 0, 0, 0.55);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .modal-backdrop.active { display: flex; }
+    
+    .modal-box {
+      background: #FFFFFF;
+      border-radius: 12px;
+      padding: 24px;
+      width: 520px;
+      max-width: 95%;
+      box-shadow: var(--shadow-md);
+      border-top: 5px solid var(--canyon-sunset);
+    }
+    .modal-box.large-doc {
+      width: 860px;
+      max-width: 96%;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      border-top: 6px solid var(--lilypad);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .modal-title { font-size: 19px; font-weight: 800; color: #2F3E46; }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 26px;
+      cursor: pointer;
+      color: #718096;
+      line-height: 1;
+    }
+    .modal-close:hover { color: #1A202C; }
+
+    .modal-doc-content {
+      flex: 1;
+      overflow-y: auto;
+      background-color: #FAF7F2;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      font-size: 15px;
+      line-height: 1.65;
+      color: #2F3E46;
+    }
+    .doc-section {
+      margin-bottom: 16px;
+      background: #FFFFFF;
+      padding: 14px 16px;
+      border-radius: 6px;
+      border: 1px solid #EAE3D7;
+    }
+    .doc-section h4 {
+      font-size: 16px;
+      color: var(--lilypad);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .doc-section h4::before { content: '■'; font-size: 12px; color: var(--canyon-sunset); }
+
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+    .form-control {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border-dark);
+      border-radius: 5px;
+      font-size: 15px;
+    }
+    textarea.form-control { resize: vertical; min-height: 90px; line-height: 1.5; }
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .btn-secondary {
+      background: #E5E7EB;
+      border: none;
+      padding: 7px 14px;
+      border-radius: 5px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="header-top">
+      <div class="badge-group">
+        <span class="badge badge-dept">벽깨기협력과 (방과후 돌봄담당)</span>
+        <span class="badge badge-sub">세세부사업: 방과후 돌봄 운영</span>
+      </div>
+      <div class="sync-status-badge" id="cloudSyncStatus">
+        <span class="status-dot" id="cloudStatusDot"></span>
+        <span id="cloudStatusText">Realtime DB 연결 중...</span>
+      </div>
+    </div>
+    <h1>2027년 방과후돌봄 예산편성요구안 브리핑 대시보드</h1>
+    <div class="subtitle">선택 필터 기반 실시간 자동 합산 및 클라우드 동기화 지원</div>
+  </header>
+
+  <div class="container">
+
+    <!-- KPI 카드 6개 -->
+    <div class="grid-kpi-6">
+      <div class="kpi-card c-morning-mist">
+        <div class="kpi-title" id="kpi-title-b26">2026년 본예산</div>
+        <div class="kpi-value-thousand" id="kpi-b26">206,755,249 천원</div>
+        <div><span class="kpi-value-eok" id="kpi-b26-eok">2,068 억 원</span></div>
+      </div>
+
+      <div class="kpi-card c-sunrays">
+        <div class="kpi-title">2026년 추가경정예산</div>
+        <div class="kpi-value-thousand" id="kpi-sup26">53,204,588 천원</div>
+        <div><span class="kpi-value-eok" id="kpi-sup26-eok">532 억 원</span></div>
+      </div>
+
+      <div class="kpi-card c-brass">
+        <div class="kpi-title">2026년 최종예산 (현액)</div>
+        <div class="kpi-value-thousand" id="kpi-f26">259,959,837 천원</div>
+        <div><span class="kpi-value-eok" id="kpi-f26-eok">2,600 억 원</span></div>
+      </div>
+
+      <div class="kpi-card highlight-target c-lilypad-hero">
+        <div class="kpi-title" style="color:#284E4B; font-weight:800;">2027년 본예산 요구액 ★</div>
+        <div class="kpi-value-thousand" id="kpi-b27" style="color:var(--lilypad); font-size:19px;">312,366,047 천원</div>
+        <div><span class="kpi-value-eok eok-hero" id="kpi-b27-eok">3,124 억 원</span></div>
+      </div>
+
+      <div class="kpi-card highlight-diff1 c-canyon-sunset">
+        <div class="kpi-title" style="color:#A33618; font-weight:800;">전년(2026본) 대비 증감</div>
+        <div class="kpi-value-thousand" id="kpi-diff-b26" style="color:#B23B1E; font-size:19px;">+105,610,798 천원</div>
+        <div><span class="kpi-value-eok eok-sunset" id="kpi-diff-b26-eok">+1,056 억 (+51.1%)</span></div>
+      </div>
+
+      <div class="kpi-card highlight-diff2 c-tea-rose">
+        <div class="kpi-title" style="color:#7A3522; font-weight:800;">전년(2026최종) 대비 증감</div>
+        <div class="kpi-value-thousand" id="kpi-diff-f26" style="color:#B56B58; font-size:19px;">+52,406,210 천원</div>
+        <div><span class="kpi-value-eok eok-rose" id="kpi-diff-f26-eok">+524 억 (+20.2%)</span></div>
+      </div>
+    </div>
+
+    <!-- 탭 네비게이션 -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab(this, 'overview')">1. 예산 총괄 및 증감 분석</button>
+      <button class="tab-btn" onclick="switchTab(this, 'projects')">2. 꼭지 사업별 요구 현황</button>
+    </div>
+
+    <!-- TAB 1: 예산 총괄 및 증감 분석 -->
+    <div id="overview" class="tab-content active">
+      <div class="dashboard-grid">
+        <div class="card col-7">
+          <div class="card-title">
+            <span>2027년 본예산 요구액 증감 분석</span>
+            <span class="unit-tag">(선택된 사업 기준 / 단위: 억원)</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="diffCompareChart"></canvas>
+          </div>
+        </div>
+
+        <div class="card col-5">
+          <div class="card-title">
+            <span>2027년 꼭지사업별 점유율 비중</span>
+            <span class="unit-tag" id="doughnut-total-tag">(총 3,124 억 원)</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="shareDoughnut"></canvas>
+          </div>
+        </div>
+
+        <div class="card col-12">
+          <div class="card-title">
+            <span>2026년 본예산 요구액 종합 대비표</span>
+            <span class="unit-tag">(선택된 꼭지사업 합산 반영 / 천원 밑에 반올림 억단위 표기)</span>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th class="text-right" style="width:16.6%;">2026년 본예산 (A)</th>
+                  <th class="text-right" style="width:16.6%;">2026년 추가경정</th>
+                  <th class="text-right" style="width:16.6%;">2026년 최종예산 (B)</th>
+                  <th class="text-right" style="width:16.6%; color:var(--lilypad);">2027년 본예산 요구 (C)</th>
+                  <th class="text-right" style="width:16.6%; color:var(--canyon-sunset);">본예산 대비 증감 (C - A)</th>
+                  <th class="text-right" style="width:17%; color:#B56B58;">최종예산 대비 증감 (C - B)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="total-row" style="background-color:#FAF4EC;">
+                  <td class="text-right">
+                    <span id="summary-b26">206,755,249</span> 천원
+                    <span class="eok-sub-block" id="summary-b26-eok">(2,068 억 원)</span>
+                  </td>
+                  <td class="text-right">
+                    <span id="summary-sup26">53,204,588</span> 천원
+                    <span class="eok-sub-block" id="summary-sup26-eok">(532 억 원)</span>
+                  </td>
+                  <td class="text-right">
+                    <span id="summary-f26">259,959,837</span> 천원
+                    <span class="eok-sub-block" id="summary-f26-eok">(2,600 억 원)</span>
+                  </td>
+                  <td class="text-right" style="font-weight:800; color:var(--lilypad);">
+                    <span id="summary-b27">312,366,047</span> 천원
+                    <span class="eok-sub-block hero-lily" id="summary-b27-eok">(3,124 억 원)</span>
+                  </td>
+                  <td class="text-right" style="font-weight:800; color:var(--canyon-sunset);">
+                    <span id="summary-diff-b26">+105,610,798</span> 천원
+                    <span class="eok-sub-block diff-up" id="summary-diff-b26-eok">+1,056 억 원 (+51.1%)</span>
+                  </td>
+                  <td class="text-right" style="font-weight:800; color:#B56B58;">
+                    <span id="summary-diff-f26">+52,406,210</span> 천원
+                    <span class="eok-sub-block diff-rose" id="summary-diff-f26-eok">+524 억 원 (+20.2%)</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: 꼭지 사업별 요구 현황 -->
+    <div id="projects" class="tab-content">
+      <div class="dashboard-grid">
+        <div class="card col-12">
+          <div class="card-title">
+            <span>2027년 꼭지 사업별 예산 비교 (2026 본예산 vs 2027 요구액)</span>
+            <span class="unit-tag">(선택된 사업 필터 기준 자동 반영)</span>
+          </div>
+          <div class="chart-container" style="height:350px;">
+            <canvas id="projectBarChart"></canvas>
+          </div>
+        </div>
+
+        <div class="card col-12">
+          <div class="card-title">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <span>꼭지 사업별 예산편성요구안 명세표</span>
+              <div class="multi-filter-container">
+                <button type="button" class="multi-filter-btn" id="multiFilterBtnTab2" onclick="toggleFilterMenu('menuTab2', this)">
+                  <span>🔍 꼭지사업 다중 선택: <strong id="filterStatusTab2" style="color:var(--lilypad);">전체 선택</strong></span>
+                  <span class="arrow-icon">▼</span>
+                </button>
+                <div class="multi-filter-menu" id="menuTab2">
+                  <div class="multi-filter-actions">
+                    <span style="font-size:12.5px; font-weight:700; color:var(--text-muted);">다중 선택 필터</span>
+                    <div>
+                      <button type="button" class="filter-quick-btn" onclick="setAllTab2Filters(true)">전체선택</button>
+                      <button type="button" class="filter-quick-btn" onclick="setAllTab2Filters(false)">전체해제</button>
+                    </div>
+                  </div>
+                  <div id="menuTab2Options"></div>
+                </div>
+              </div>
+              <span class="editable-badge">⚡ 체크 선택에 따라 합계 자동 계산</span>
+            </div>
+
+            <!-- 우측 액션 버튼 영역 -->
+            <div style="display:flex; align-items:center; gap:8px;">
+              <button class="btn-action btn-save-now" onclick="manualSaveToCloud()">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                💾 지금 즉시 저장
+              </button>
+              <button class="btn-action" onclick="openAddTopModal()">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                새 꼭지사업 추가
+              </button>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:20%;">꼭지 사업명 / 하위 세부사업명</th>
+                  <th style="width:4.5%; text-align:center;">재원</th>
+                  <th class="text-right" style="width:10.5%;">2026년 본예산</th>
+                  <th class="text-right" style="width:10.5%;">2027년 요구액</th>
+                  <th class="text-right" style="width:11.5%;">증감액 (자동계산)</th>
+                  <th class="text-right" style="width:5.5%;">증감률</th>
+                  <th style="width:26%;">주요 사업 물량 (줄바꿈 가능)</th>
+                  <th class="text-center" style="width:4.5%; white-space:nowrap;">사업설명서</th>
+                  <th class="text-center" style="width:7%; white-space:nowrap;">추가/관리</th>
+                </tr>
+              </thead>
+              <tbody id="projectTableBody">
+                <!-- 동적 렌더링 -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 모달 1: 세부사업 추가 모달 -->
+  <div id="subProjectModal" class="modal-backdrop">
+    <div class="modal-box" style="width:580px;">
+      <div class="modal-header">
+        <div class="modal-title" id="subModalTitle">세부사업 추가 및 설명서 작성</div>
+        <button class="modal-close" onclick="closeSubModal()">&times;</button>
+      </div>
+      <input type="hidden" id="targetParentId">
+      
+      <div class="form-group">
+        <label>상위 꼭지사업</label>
+        <input type="text" id="parentNameDisplay" class="form-control" readonly style="background:#F3F4F6; font-weight:700;">
+      </div>
+      <div class="form-group">
+        <label>세부사업명 *</label>
+        <input type="text" id="newSubName" class="form-control" placeholder="예: 대학 연계 특화 거점캠퍼스 운영">
+      </div>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+        <div class="form-group">
+          <label>2026년 본예산 (천원)</label>
+          <input type="number" id="newSubB26" class="form-control" placeholder="0" value="0">
+        </div>
+        <div class="form-group">
+          <label>2027년 요구액 (천원) *</label>
+          <input type="number" id="newSubB27" class="form-control" placeholder="예: 300000">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>주요 사업 물량 및 산출 근거 (Enter로 줄바꿈 가능)</label>
+        <textarea id="newSubDesc" class="form-control" placeholder="예: • 거점 10개 대학 연계 운영&#10;• 전용 프로그램 운영 지원" style="min-height:70px;"></textarea>
+      </div>
+      
+      <div style="border-top:1px dashed var(--border-dark); margin:12px 0 10px 0; padding-top:10px;">
+        <label style="font-weight:800; color:var(--lilypad); display:flex; align-items:center; gap:5px; margin-bottom:6px;">
+          📄 세부사업 설명서 본문 작성
+        </label>
+        <div class="form-group">
+          <label style="font-size:14px;">1. 사업 목적 및 필요성</label>
+          <input type="text" id="docPurpose" class="form-control" placeholder="사업 목적 입력">
+        </div>
+        <div class="form-group">
+          <label style="font-size:14px;">2. 세부 사업 내용 및 지원 기준</label>
+          <textarea id="docContent" class="form-control" placeholder="세부 내용 입력"></textarea>
+        </div>
+        <div class="form-group">
+          <label style="font-size:14px;">3. 기대 효과</label>
+          <input type="text" id="docEffect" class="form-control" placeholder="기대 효과 입력">
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeSubModal()">취소</button>
+        <button class="btn-action" onclick="saveSubProject()">클라우드 저장 및 공유</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 모달 2: 사업설명서 뷰어 및 수정 -->
+  <div id="docViewerModal" class="modal-backdrop">
+    <div class="modal-box large-doc">
+      <div class="modal-header">
+        <div>
+          <div style="font-size:14px; font-weight:700; color:var(--canyon-sunset);" id="viewerCategory">꼭지사업명</div>
+          <div class="modal-title" id="viewerTitle">세부사업 설명서</div>
+        </div>
+        <button class="modal-close" onclick="closeDocViewer()">&times;</button>
+      </div>
+      
+      <div class="modal-doc-content" id="viewerContent"></div>
+
+      <div class="modal-footer" style="margin-top:12px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:13.5px; color:var(--text-muted);">💡 설명서를 직접 수정한 뒤 저장 버튼을 누르면 모든 팀원 화면에 즉시 동기화됩니다.</span>
+        <div style="display:flex; gap:8px;">
+          <button class="btn-action" style="background-color:var(--canyon-sunset);" onclick="saveDocViewerEdits()">💾 클라우드 수정 저장</button>
+          <button class="btn-secondary" onclick="closeDocViewer()">창 닫기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 모달 3: 새 상위 꼭지사업 추가 -->
+  <div id="addTopModal" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">새 꼭지사업 추가</div>
+        <button class="modal-close" onclick="closeAddTopModal()">&times;</button>
+      </div>
+      <div class="form-group">
+        <label>새 꼭지 사업명 *</label>
+        <input type="text" id="newTopTitle" class="form-control" placeholder="예: 늘봄학교 거점형 모델 구축">
+      </div>
+      <div class="form-group">
+        <label>재원 구분</label>
+        <select id="newTopFund" class="form-control">
+          <option value="자체">자체</option>
+          <option value="자체(특교)">자체(특교)</option>
+          <option value="국고보조금">국고보조금</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>2026년 본예산 (천원)</label>
+        <input type="number" id="newTopB26" class="form-control" placeholder="0" value="0">
+      </div>
+      <div class="form-group">
+        <label>2027년 요구액 (천원) *</label>
+        <input type="number" id="newTopB27" class="form-control" placeholder="예: 500000">
+      </div>
+      <div class="form-group">
+        <label>주요 사업 물량 및 비고 (Enter로 줄바꿈 가능)</label>
+        <textarea id="newTopDesc" class="form-control" placeholder="예: • 25개 청 50교 시범 운영&#10;• 전용 실내 공간 리모델링" style="min-height:70px;"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeAddTopModal()">취소</button>
+        <button class="btn-action" onclick="saveTopProject()">클라우드 등록 및 공유</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    Chart.register(ChartDataLabels);
+
+    // ==========================================
+    // 1. Firebase Realtime Database 연동
+    // ==========================================
+    const firebaseConfig = {
+      apiKey: "AIzaSyAxRFPgp5gOKnduF_FlgpKXrKxbeTeUPcc",
+      authDomain: "afterschool-budget-2027.firebaseapp.com",
+      databaseURL: "https://afterschool-budget-2027-default-rtdb.firebaseio.com",
+      projectId: "afterschool-budget-2027",
+      storageBucket: "afterschool-budget-2027.firebasestorage.app",
+      messagingSenderId: "184418769998",
+      appId: "1:184418769998:web:92b359084db5ae09f2371f"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const rtdb = firebase.database();
+    const budgetDataRef = rtdb.ref("budget_data_current");
+
+    const initialProjectList = [
+      {
+        id: 1, name: "방과후학교운영체제구축", tag: "", fund: "자체", b26: 2399585, b27: 1495000, desc: "26개 센터 운영\n늘봄전담실장 647명 협의체 및 연수비·출장비", fixed: true,
+        doc: {
+          purpose: "방과후 돌봄지원센터의 현장 컨설팅 역량 제고 및 늘봄전담실장 체제 안착",
+          content: "• 도·지역 26개 방과후지원센터 운영 및 매뉴얼 개발\n• 늘봄전담실장 647명 직무연수, 협의회비, 겸임출장여비 지원",
+          effect: "단위학교의 방과후 행정업무 경감 및 체계적 질 관리"
+        },
+        subProjects: []
+      },
+      {
+        id: 2, name: "학생맞춤형 프로그램운영", tag: "", fund: "자체", b26: 84850664, b27: 84011880, desc: "초1~2 2시간 무상 맞춤형(80,894명/3,677학급)\n대학연계 25청 지원", fixed: true,
+        doc: {
+          purpose: "초1~2 학생들의 학교생활 적응 및 성장·발달을 지원하는 양질의 무상 맞춤형 프로그램 제공",
+          content: "• 대상: 초1~2 학생 전체의 46% (80,894명 / 3,677학급)\n• 내용: 신체활동 중심의 놀이·체험형 RAS 프로그램 매일 2시간 무료 제공",
+          effect: "학부모 사교육비 부담 대폭 완화 및 방과후 프로그램 질 제고"
+        },
+        subProjects: [
+          {
+            id: 201, name: "대학연계 방과후프로그램(경기형 앵커사업)", fund: "자체", b26: 0, b27: 1500000, desc: "25개 교육지원청별 지역 대학 협업",
+            doc: {
+              purpose: "지역 거점 대학의 우수한 인적·물적 자원을 단위학교 방과후 프로그램으로 연계",
+              content: "• 추진방법: 25개 교육지원청 × 5,000,000원 × 12개월 일괄 지원\n• 내용: 디지털 AI, 문화예술, 첨단 과학기술 등 대학 연계 특화 강좌 개설",
+              effect: "지역사회-대학-학교가 상생하는 미래형 방과후 모델 정착"
+            }
+          }
+        ]
+      },
+      {
+        id: 3, name: "지역맞춤형 프로그램운영", tag: "", fund: "자체", b26: 1108800, b27: 19809186, desc: "소규모(10학급 이하) 295교 위탁\n중등 소외 25청, 농산어촌 475교 운영비", fixed: true,
+        doc: {
+          purpose: "농산어촌 및 도심 소외지역 소규모학교의 방과후 프로그램 공급난 해소 및 교육격차 극복",
+          content: "• 대상: 10학급 이하 초등학교(295교) 및 농산어촌 중·고교\n• 지원청에서 강사 및 프로그램을 일괄 계약하여 학교로 파견 위탁",
+          effect: "소외지역 학생들에게도 대도시 수준의 다양한 특기적성 강좌 공급"
+        },
+        subProjects: []
+      },
+      {
+        id: 4, name: "방과후학교운영지원", tag: "", fund: "자체", b26: 4348200, b27: 21054000, desc: "공간조성 517실(103.4억)\n안전봉사자 990교, 안심귀가 7,000명, 출결 720교", fixed: true,
+        doc: {
+          purpose: "학생들의 안심귀가와 안전한 학교 공간 혁신을 위한 단위학교 기반 구축 지원",
+          content: "• 공간조성: 늘봄·방과후 전용실 및 교사연구실 517실 리모델링(실당 2,000만원)\n• 안전인프라: 스마트 위치추적기 7,000명, 출결관리시스템 720교, 안전지도봉사자 990교",
+          effect: "교원 업무부담 분리와 안심할 수 있는 학생 돌봄 인프라 완결"
+        },
+        subProjects: []
+      },
+      {
+        id: 5, name: "방과후학교이용권지원", tag: "", fund: "자체(특교)", b26: 42934947, b27: 71636000, desc: "초3(57,276명), 초4 신규확대(61,878명)\n저소득층 자유수강권 1인 50만원", fixed: true,
+        doc: {
+          purpose: "수익자 부담 원칙의 방과후 프로그램 수강료를 지원하여 교육 기회 보장 및 교육격차 해소",
+          content: "• 대상: 도내 초3(57,276명), 초4(61,878명), 저소득층(24,118명)\n• 기준: 1인당 연간 500,000원 바우처 지급",
+          effect: "초등 고학년의 방과후 프로그램 참여 활성화 및 실질적 가계 사교육비 경감"
+        },
+        subProjects: []
+      },
+      {
+        id: 6, name: "늘봄전담실운영", tag: "총액교부", fund: "자체", b26: 0, b27: 822600, desc: "총액교부 1,371교 늘봄전담실 소모품비 및 운영비 지원", fixed: true,
+        doc: {
+          purpose: "단위학교 늘봄전담실의 자율적 소모품 및 협의체 운영비 직접 지원",
+          content: "• 대상: 도내 1,371개 초등학교\n• 지원내역: 교당 600,000원 총액교부",
+          effect: "단위학교 늘봄전담실 독립 운영 환경 조기 정착"
+        },
+        subProjects: []
+      },
+      {
+        id: 7, name: "온동네돌봄·교육센터운영", tag: "", fund: "자체", b26: 16907078, b27: 20162710, desc: "거점센터 60개소 구축·운영\n돌봄협의체(25청/1,366교), 학교돌봄터 22교", fixed: true,
+        doc: {
+          purpose: "학교 담장을 넘어 지자체 및 지역사회와 연계하는 온동네 책임돌봄 거점 모델 확산",
+          content: "• 거점센터 60개소 운영 및 신규 리모델링 10개소\n• 지역 내 돌봄협의체(25개청/1,366교) 및 학교돌봄터 22교 지원",
+          effect: "지자체 협력 돌봄을 통한 교육청-지자체 돌봄 사각지대 제로화"
+        },
+        subProjects: []
+      },
+      {
+        id: 8, name: "초등돌봄교실운영", tag: "내시사업", fund: "자체", b26: 54205975, b27: 90358641, desc: "25개 교육지원청 2,946실 운영비 지원", fixed: true,
+        doc: {
+          purpose: "초등돌봄교실 운영 지원을 통한 학부모 양육 부담 경감 및 국가 책임 돌봄 실현",
+          content: "• 대상: 경기도 내 공립초등학교 돌봄교실(2,946실)\n• 내용: 실당 돌봄전담사 인건비, 프로그램 운영비, 간식비 지원",
+          effect: "학생 맞춤형 돌봄 서비스 제공으로 안전한 학교 환경 조성 및 돌봄 공백 해소"
+        },
+        subProjects: [
+          {
+            id: 801, name: "거점형 초등돌봄교실 모델 운영", fund: "자체", b26: 0, b27: 1500000, desc: "과밀지역 거점센터 연계 20실 시범운영",
+            doc: {
+              purpose: "대규모 신도시 및 돌봄 대기자가 많은 지역의 학교 간 공동 대응 거점교실 구축",
+              content: "• 지원대상: 거점 연계 중심학교 20교\n• 지원내역: 거점교실 시설구축비 실당 3,000만원, 전담인력 인건비 및 차량운행비",
+              effect: "대기자 전원 수용을 통한 맞벌이 학부모 만족도 극대화"
+            }
+          }
+        ]
+      },
+      {
+        id: 9, name: "초등돌봄교실운영지원", tag: "", fund: "자체", b26: 0, b27: 3838630, desc: "아침돌봄교실 538실 지원 (실당 7,135천원)", fixed: true,
+        doc: {
+          purpose: "일찍 출근하는 맞벌이 부모를 위해 이른 아침 틈새 돌봄 공백 해소",
+          content: "• 지원대상: 도내 초등학교 538개실\n• 지원기준: 실당 7,135,000원 (정규수업 전 쉼, 독서, 가벼운 신체활동 운영)",
+          effect: "이른 아침 돌봄 사각지대 해소로 실질적인 일-가정 양립 지원"
+        },
+        subProjects: []
+      }
+    ];
+
+    let projectList = [...initialProjectList];
+    let selectedTab2Projects = new Set();
+    let autoSaveTimeout = null;
+
+    // 수동 즉시 저장 버튼 (원클릭)
+    function manualSaveToCloud() {
+      if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+      setSyncStatus(true);
+      budgetDataRef.set({
+        list: projectList,
+        updatedAt: firebase.database.ServerValue.TIMESTAMP
+      }).then(() => {
+        setSyncStatus(false);
+        alert('현재 모든 수정 내용이 Realtime Database에 저장되었습니다.\n(모든 팀원의 화면에 즉각 반영됩니다)');
+      }).catch(err => {
+        console.error("수동 저장 에러:", err);
+        setSyncStatus(false, true);
+        alert('저장에 실패했습니다. 데이터베이스 규칙 상태를 확인해주세요.');
+      });
+    }
+
+    // 디바운스 실시간 자동 저장
+    function triggerAutoSync(delay = 500) {
+      setSyncStatus(true);
+      if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+      autoSaveTimeout = setTimeout(() => {
+        budgetDataRef.set({
+          list: projectList,
+          updatedAt: firebase.database.ServerValue.TIMESTAMP
+        }).then(() => {
+          setSyncStatus(false);
+        }).catch(err => {
+          console.error("자동 동기화 에러:", err);
+          setSyncStatus(false, true);
+        });
+      }, delay);
+    }
+
+    function setSyncStatus(isSyncing, isError = false) {
+      const dot = document.getElementById('cloudStatusDot');
+      const text = document.getElementById('cloudStatusText');
+      if (isError) {
+        dot.style.backgroundColor = '#EF4444';
+        text.innerText = '동기화 실패 (규칙/네트워크 확인)';
+        return;
+      }
+      if (isSyncing) {
+        dot.classList.add('syncing');
+        text.innerText = '💾 저장 중...';
+      } else {
+        dot.classList.remove('syncing');
+        dot.style.backgroundColor = '#10B981';
+        text.innerText = '🟢 Realtime DB 연동됨';
+      }
+    }
+
+    // ==========================================
+    // 2. Realtime Database 실시간 리스너
+    // ==========================================
+    function initRealtimeSync() {
+      budgetDataRef.on('value', (snapshot) => {
+        const val = snapshot.val();
+        if (val && val.list) {
+          projectList = val.list;
+          if (selectedTab2Projects.size === 0) {
+            projectList.forEach(p => selectedTab2Projects.add(p.id.toString()));
+          }
+          renderFilterCheckboxes();
+          renderProjectTable();
+          setSyncStatus(false);
+        } else {
+          triggerAutoSync(0);
+        }
+      }, (error) => {
+        console.error("Realtime DB 리스너 에러:", error);
+        setSyncStatus(false, true);
+      });
+    }
+
+    function switchTab(btnElem, tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+      if (btnElem) btnElem.classList.add('active');
+      const target = document.getElementById(tabId);
+      if (target) target.classList.add('active');
+    }
+
+    function toggleFilterMenu(menuId, btnElem) {
+      const menu = document.getElementById(menuId);
+      const isOpen = menu.classList.contains('show');
+      document.querySelectorAll('.multi-filter-menu').forEach(m => m.classList.remove('show'));
+      document.querySelectorAll('.multi-filter-btn').forEach(b => b.classList.remove('open'));
+      if (!isOpen) {
+        menu.classList.add('show');
+        if (btnElem) btnElem.classList.add('open');
+      }
+    }
+
+    window.addEventListener('click', function(e) {
+      if (!e.target.closest('.multi-filter-container')) {
+        document.querySelectorAll('.multi-filter-menu').forEach(m => m.classList.remove('show'));
+        document.querySelectorAll('.multi-filter-btn').forEach(b => b.classList.remove('open'));
+      }
+    });
+
+    function renderFilterCheckboxes() {
+      const container = document.getElementById('menuTab2Options');
+      container.innerHTML = '';
+      projectList.forEach(p => {
+        const isChecked = selectedTab2Projects.has(p.id.toString());
+        const label = document.createElement('label');
+        label.className = 'filter-option-item';
+        label.innerHTML = `
+          <input type="checkbox" value="${p.id}" ${isChecked ? 'checked' : ''} onchange="onTab2CheckboxChange()"> 
+          ${p.name}
+        `;
+        container.appendChild(label);
+      });
+      updateFilterLabel();
+    }
+
+    function onTab2CheckboxChange() {
+      const checkedBoxes = document.querySelectorAll('#menuTab2Options input[type="checkbox"]:checked');
+      selectedTab2Projects.clear();
+      checkedBoxes.forEach(cb => selectedTab2Projects.add(cb.value));
+      updateFilterLabel();
+      renderProjectTable();
+    }
+
+    function updateFilterLabel() {
+      const totalCount = projectList.length;
+      const statusElem = document.getElementById('filterStatusTab2');
+      if (selectedTab2Projects.size === totalCount) {
+        statusElem.innerText = `전체 선택 (${totalCount}개)`;
+      } else if (selectedTab2Projects.size === 0) {
+        statusElem.innerText = `선택 없음 (0개)`;
+      } else {
+        statusElem.innerText = `${selectedTab2Projects.size}개 사업 선택됨`;
+      }
+    }
+
+    function setAllTab2Filters(checkAll) {
+      document.querySelectorAll('#menuTab2Options input[type="checkbox"]').forEach(cb => {
+        cb.checked = checkAll;
+      });
+      onTab2CheckboxChange();
+    }
+
+    let diffChartInstance = null;
+    let shareDoughnutInstance = null;
+    let projectChartInstance = null;
+
+    function parseNum(str) {
+      if (!str) return 0;
+      const clean = str.toString().replace(/[^0-9.-]/g, '');
+      return parseFloat(clean) || 0;
+    }
+
+    // 꼭지사업 테이블 렌더링 (선택된 사업 필터 기준 자동 합산)
+    function renderProjectTable() {
+      const tbody = document.getElementById('projectTableBody');
+      tbody.innerHTML = '';
+
+      let filterTotalB26 = 0;
+      let filterTotalB27 = 0;
+
+      projectList.forEach((p, pIdx) => {
+        // 하위 세부사업 합산
+        let pB26 = p.b26;
+        let pB27 = p.b27;
+
+        if (p.subProjects && p.subProjects.length > 0) {
+          p.subProjects.forEach(sub => {
+            pB26 += sub.b26;
+            pB27 += sub.b27;
+          });
+        }
+
+        // 선택 필터에 포함된 경우만 합산 및 렌더링
+        if (!selectedTab2Projects.has(p.id.toString())) return;
+
+        filterTotalB26 += pB26;
+        filterTotalB27 += pB27;
+
+        const diff = pB27 - pB26;
+        const rate = pB26 === 0 ? "순증" : ((diff / pB26) * 100).toFixed(1) + "%";
+        const isUp = diff >= 0;
+
+        const b26Eok = Math.round(pB26 / 100000);
+        const b27Eok = Math.round(pB27 / 100000);
+        const diffEok = Math.round(Math.abs(diff) / 100000);
+
+        const trTop = document.createElement('tr');
+        trTop.style.backgroundColor = '#FFFFFF';
+        trTop.innerHTML = `
+          <td>
+            <button class="btn-doc-view" onclick="viewDoc('top', ${p.id})">📁</button>
+            <strong contenteditable="true" class="editable-cell" 
+                    oninput="handleTopProjectFieldChange(${pIdx}, 'name', this.innerText)" 
+                    onblur="handleTopProjectFieldChange(${pIdx}, 'name', this.innerText, true)">${p.name}</strong>
+            ${p.tag ? `<span class="badge" style="background:#EBF2F1; color:var(--lilypad); padding:1px 6px; font-size:12px; margin-left:4px;">${p.tag}</span>` : ''}
+          </td>
+          <td contenteditable="true" class="editable-cell text-center" 
+              oninput="handleTopProjectFieldChange(${pIdx}, 'fund', this.innerText)" 
+              onblur="handleTopProjectFieldChange(${pIdx}, 'fund', this.innerText, true)">${p.fund}</td>
+          <td class="text-right">
+            <span contenteditable="true" class="editable-cell" 
+                  oninput="handleTopProjectNumChange(${pIdx}, 'b26', this.innerText)" 
+                  onblur="handleTopProjectNumChange(${pIdx}, 'b26', this.innerText, true)">${p.b26.toLocaleString()}</span> 천원
+            <span class="eok-sub-block">(${b26Eok.toLocaleString()} 억 원)</span>
+          </td>
+          <td class="text-right" style="font-weight:700;">
+            <span contenteditable="true" class="editable-cell" 
+                  oninput="handleTopProjectNumChange(${pIdx}, 'b27', this.innerText)" 
+                  onblur="handleTopProjectNumChange(${pIdx}, 'b27', this.innerText, true)">${p.b27.toLocaleString()}</span> 천원
+            <span class="eok-sub-block hero-lily">(${b27Eok.toLocaleString()} 억 원)</span>
+          </td>
+          <td class="text-right" style="${isUp ? 'color:var(--canyon-sunset); font-weight:700;' : 'color:var(--text-muted);'}">
+            ${diff >= 0 ? '+' : ''}${diff.toLocaleString()} 천원
+            <span class="eok-sub-block ${isUp ? 'diff-up' : ''}">(${diff >= 0 ? '+' : '-'}${diffEok.toLocaleString()} 억 원)</span>
+          </td>
+          <td class="text-right">
+            <span class="diff-pill ${isUp ? 'up' : ''}">${pB26 === 0 ? '순증' : (diff >= 0 ? '+' + rate : rate)}</span>
+          </td>
+          <td contenteditable="true" class="editable-cell desc-multiline" 
+              oninput="handleTopProjectFieldChange(${pIdx}, 'desc', this.innerText)" 
+              onblur="handleTopProjectFieldChange(${pIdx}, 'desc', this.innerText, true)">${p.desc || ''}</td>
+          <td class="text-center">
+            <button class="btn-doc-view" onclick="viewDoc('top', ${p.id})">보기</button>
+          </td>
+          <td class="text-center">
+            <button class="btn-sub-add" onclick="openAddSubModal(${p.id})">+ 세부사업</button>
+          </td>
+        `;
+        tbody.appendChild(trTop);
+
+        if (p.subProjects && p.subProjects.length > 0) {
+          p.subProjects.forEach((sub, sIdx) => {
+            const sDiff = sub.b27 - sub.b26;
+            const sRate = sub.b26 === 0 ? "순증" : ((sDiff / sub.b26) * 100).toFixed(1) + "%";
+            const sIsUp = sDiff >= 0;
+            const sB26Eok = Math.round(sub.b26 / 100000);
+            const sB27Eok = Math.round(sub.b27 / 100000);
+            const sDiffEok = Math.round(Math.abs(sDiff) / 100000);
+
+            const trSub = document.createElement('tr');
+            trSub.className = 'sub-item-row';
+            trSub.innerHTML = `
+              <td class="sub-title-indent">
+                <button class="btn-doc-view" onclick="viewDoc('sub', ${sub.id}, ${p.id})" title="클릭 시 사업설명서 열람">📄</button>
+                <span contenteditable="true" class="editable-cell" style="font-weight:700; color:#374151;"
+                      oninput="handleSubProjectFieldChange(${pIdx}, ${sIdx}, 'name', this.innerText)" 
+                      onblur="handleSubProjectFieldChange(${pIdx}, ${sIdx}, 'name', this.innerText, true)">${sub.name}</span>
+                <span class="badge" style="background:#FEF3C7; color:#92400E; padding:1px 5px; font-size:11px; margin-left:4px;">세부사업</span>
+              </td>
+              <td contenteditable="true" class="editable-cell text-center" 
+                  oninput="handleSubProjectFieldChange(${pIdx}, ${sIdx}, 'fund', this.innerText)" 
+                  onblur="handleSubProjectFieldChange(${pIdx}, ${sIdx}, 'fund', this.innerText, true)">${sub.fund}</td>
+              <td class="text-right">
+                <span contenteditable="true" class="editable-cell" 
+                  oninput="handleSubProjectNumChange(${pIdx}, ${sIdx}, 'b26', this.innerText)" 
+                  onblur="handleSubProjectNumChange(${pIdx}, ${sIdx}, 'b26', this.innerText, true)">${sub.b26.toLocaleString()}</span> 천원
+                <span class="eok-sub-block">(${sB26Eok.toLocaleString()} 억 원)</span>
+              </td>
+              <td class="text-right" style="font-weight:700;">
+                <span contenteditable="true" class="editable-cell" 
+                  oninput="handleSubProjectNumChange(${pIdx}, ${sIdx}, 'b27', this.innerText)" 
+                  onblur="handleSubProjectNumChange(${pIdx}, ${sIdx}, 'b27', this.innerText, true)">${sub.b27.toLocaleString()}</span> 천원
+                <span class="eok-sub-block hero-lily">(${sB27Eok.toLocaleString()} 억 원)</span>
+              </td>
+              <td class="text-right" style="${sIsUp ? 'color:var(--canyon-sunset); font-weight:700;' : 'color:var(--text-muted);'}">
+                ${sDiff >= 0 ? '+' : ''}${sDiff.toLocaleString()} 천원
+                <span class="eok-sub-block ${sIsUp ? 'diff-up' : ''}">(${sDiff >= 0 ? '+' : '-'}${sDiffEok.toLocaleString()} 억 원)</span>
+              </td>
+              <td class="text-right">
+                <span class="diff-pill ${sIsUp ? 'up' : ''}">${sub.b26 === 0 ? '순증' : (sDiff >= 0 ? '+' + sRate : sRate)}</span>
+              </td>
+              <td contenteditable="true" class="editable-cell desc-multiline" 
+                  oninput="handleSubProjectFieldChange(${pIdx}, ${sIdx}, 'desc', this.innerText)" 
+                  onblur="handleSubProjectFieldChange(${pIdx}, ${sIdx}, 'desc', this.innerText, true)">${sub.desc || ''}</td>
+              <td class="text-center">
+                <button class="btn-doc-view" onclick="viewDoc('sub', ${sub.id}, ${p.id})">보기</button>
+              </td>
+              <td class="text-center">
+                <button class="btn-del" onclick="deleteSubProject(${pIdx}, ${sIdx})">삭제</button>
+              </td>
+            `;
+            tbody.appendChild(trSub);
+          });
+        }
+      });
+
+      // 합계행 (필터링된 금액 기준 합산)
+      const totalDiff = filterTotalB27 - filterTotalB26;
+      const totalRate = filterTotalB26 === 0 ? "순증" : ((totalDiff / filterTotalB26) * 100).toFixed(1) + "%";
+      const totalIsUp = totalDiff >= 0;
+      const isAllSelected = selectedTab2Projects.size === projectList.length;
+
+      const totalTr = document.createElement('tr');
+      totalTr.className = 'total-row';
+      totalTr.innerHTML = `
+        <td colspan="2">합계 (${isAllSelected ? '선택 사업 전체 총괄' : `선택된 ${selectedTab2Projects.size}개 사업 합계`})</td>
+        <td class="text-right">
+          ${filterTotalB26.toLocaleString()} 천원
+          <span class="eok-sub-block">(${Math.round(filterTotalB26/100000).toLocaleString()} 억 원)</span>
+        </td>
+        <td class="text-right" style="color:var(--lilypad); font-weight:800;">
+          ${filterTotalB27.toLocaleString()} 천원
+          <span class="eok-sub-block hero-lily">(${Math.round(filterTotalB27/100000).toLocaleString()} 억 원)</span>
+        </td>
+        <td class="text-right" style="color:var(--canyon-sunset); font-weight:800;">
+          ${totalDiff >= 0 ? '+' : ''}${totalDiff.toLocaleString()} 천원
+          <span class="eok-sub-block ${totalIsUp ? 'diff-up' : ''}">(${totalDiff >= 0 ? '+' : '-'}${Math.round(Math.abs(totalDiff)/100000).toLocaleString()} 억 원)</span>
+        </td>
+        <td class="text-right"><span class="diff-pill ${totalIsUp ? 'up' : ''}">${totalDiff >= 0 && filterTotalB26 > 0 ? '+' + totalRate : totalRate}</span></td>
+        <td>-</td>
+        <td class="text-center">-</td>
+        <td class="text-center">-</td>
+      `;
+      tbody.appendChild(totalTr);
+
+      // 상단 KPI 카드 및 차트도 선택된 필터 합산 금액으로 동기화
+      syncTopKPIs(filterTotalB26, filterTotalB27);
+      updateCharts();
+    }
+
+    // ==========================================
+    // 3. 인라인 편집 및 실시간 자동 저장
+    // ==========================================
+    function handleTopProjectFieldChange(pIdx, field, val, immediate = false) {
+      projectList[pIdx][field] = val;
+      triggerAutoSync(immediate ? 0 : 500);
+      updateCharts();
+    }
+
+    function handleTopProjectNumChange(pIdx, field, val, immediate = false) {
+      projectList[pIdx][field] = parseNum(val);
+      triggerAutoSync(immediate ? 0 : 500);
+      if (immediate) renderProjectTable();
+    }
+
+    function handleSubProjectFieldChange(pIdx, sIdx, field, val, immediate = false) {
+      projectList[pIdx].subProjects[sIdx][field] = val;
+      triggerAutoSync(immediate ? 0 : 500);
+      updateCharts();
+    }
+
+    function handleSubProjectNumChange(pIdx, sIdx, field, val, immediate = false) {
+      projectList[pIdx].subProjects[sIdx][field] = parseNum(val);
+      triggerAutoSync(immediate ? 0 : 500);
+      if (immediate) renderProjectTable();
+    }
+
+    function deleteSubProject(pIdx, sIdx) {
+      if (confirm('해당 세부사업을 삭제하시겠습니까? (팀원 전체 실시간 반영)')) {
+        projectList[pIdx].subProjects.splice(sIdx, 1);
+        renderProjectTable();
+        triggerAutoSync(0);
+      }
+    }
+
+    // 세부사업 추가 모달
+    function openAddSubModal(parentId) {
+      const parent = projectList.find(p => p.id === parentId);
+      if (!parent) return;
+
+      document.getElementById('targetParentId').value = parentId;
+      document.getElementById('parentNameDisplay').value = parent.name;
+      document.getElementById('newSubName').value = '';
+      document.getElementById('newSubB26').value = '0';
+      document.getElementById('newSubB27').value = '';
+      document.getElementById('newSubDesc').value = '';
+      document.getElementById('docPurpose').value = '';
+      document.getElementById('docContent').value = '';
+      document.getElementById('docEffect').value = '';
+
+      document.getElementById('subProjectModal').classList.add('active');
+    }
+
+    function closeSubModal() {
+      document.getElementById('subProjectModal').classList.remove('active');
+    }
+
+    function saveSubProject() {
+      const parentId = parseInt(document.getElementById('targetParentId').value);
+      const parent = projectList.find(p => p.id === parentId);
+      const name = document.getElementById('newSubName').value.trim();
+      const b26 = parseNum(document.getElementById('newSubB26').value);
+      const b27 = parseNum(document.getElementById('newSubB27').value);
+      const desc = document.getElementById('newSubDesc').value.trim() || '신규 세부사업';
+
+      const purpose = document.getElementById('docPurpose').value.trim() || `${name} 운영을 통한 교육력 제고`;
+      const content = document.getElementById('docContent').value.trim() || `• 사업내용: ${desc}\n• 소요예산: ${b27.toLocaleString()}천원`;
+      const effect = document.getElementById('docEffect').value.trim() || '학생 및 학부모 맞춤형 돌봄·교육 만족도 향상';
+
+      if (!name || b27 <= 0) {
+        alert('세부사업명과 2027년 요구액을 입력해주세요.');
+        return;
+      }
+
+      if (!parent.subProjects) parent.subProjects = [];
+      parent.subProjects.push({
+        id: Date.now(),
+        name: name,
+        fund: parent.fund,
+        b26: b26,
+        b27: b27,
+        desc: desc,
+        doc: { purpose, content, effect }
+      });
+
+      closeSubModal();
+      triggerAutoSync(0);
+      renderProjectTable();
+    }
+
+    // 사업설명서 열람 및 수정
+    let currentEditingDocTarget = null;
+
+    function viewDoc(type, id, parentId) {
+      let target = null;
+      let parentName = "";
+
+      if (type === 'top') {
+        target = projectList.find(p => p.id === id);
+        parentName = "○ 꼭지사업";
+      } else {
+        const parent = projectList.find(p => p.id === parentId);
+        if (parent) {
+          parentName = `[상위 꼭지사업: ${parent.name}]`;
+          target = parent.subProjects.find(s => s.id === id);
+        }
+      }
+
+      if (!target) return;
+
+      currentEditingDocTarget = { type, id, parentId, targetRef: target };
+
+      document.getElementById('viewerCategory').innerText = parentName;
+      document.getElementById('viewerTitle').innerText = `📄 ${target.name} 사업설명서`;
+
+      const doc = target.doc || {
+        purpose: "관련 지침 및 단위학교 지원 계획에 따른 목적 사업 추진",
+        content: `• 사업규모: ${target.desc || '세부계획 수립 후 시행'}\n• 소요예산: ${(target.b27 || 0).toLocaleString()} 천원`,
+        effect: "학생 성장 지원 및 공교육 책임돌봄 실현"
+      };
+
+      const html = `
+        <div class="doc-section">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h4>1. 사업 개요 및 예산 규모</h4>
+            <span style="font-size:12px; color:var(--text-muted);">(명세표 연동 항목)</span>
+          </div>
+          <p style="margin-top:4px;"><strong>• 2027년 요구액:</strong> ${(target.b27 || 0).toLocaleString()} 천원 (${Math.round((target.b27 || 0)/100000)} 억 원)</p>
+          <p><strong>• 2026년 본예산:</strong> ${(target.b26 || 0).toLocaleString()} 천원</p>
+          <p style="white-space:pre-wrap; margin-top:4px;"><strong>• 주요 산출 물량:</strong><br>${target.desc || '-'}</p>
+        </div>
+
+        <div class="doc-section">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h4>2. 사업 목적 및 필요성</h4>
+            <span class="editable-badge" style="font-size:11px; padding:1px 5px;">✏️ 직접 클릭하여 수정</span>
+          </div>
+          <div id="editDocPurpose" contenteditable="true" class="editable-cell" style="margin-top:6px; min-height:36px; padding:6px; border:1px solid #EAE3D7; border-radius:4px; background:#FFFFFF;">${(doc.purpose || '').replace(/\n/g, '<br>')}</div>
+        </div>
+
+        <div class="doc-section">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h4>3. 세부 사업 내용 및 추진 방법</h4>
+            <span class="editable-badge" style="font-size:11px; padding:1px 5px;">✏️ 직접 클릭하여 수정</span>
+          </div>
+          <div id="editDocContent" contenteditable="true" class="editable-cell" style="margin-top:6px; min-height:70px; padding:6px; border:1px solid #EAE3D7; border-radius:4px; background:#FFFFFF; white-space:pre-line;">${doc.content || ''}</div>
+        </div>
+
+        <div class="doc-section">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h4>4. 기대 효과</h4>
+            <span class="editable-badge" style="font-size:11px; padding:1px 5px;">✏️ 직접 클릭하여 수정</span>
+          </div>
+          <div id="editDocEffect" contenteditable="true" class="editable-cell" style="margin-top:6px; min-height:36px; padding:6px; border:1px solid #EAE3D7; border-radius:4px; background:#FFFFFF;">${(doc.effect || '').replace(/\n/g, '<br>')}</div>
+        </div>
+      `;
+
+      document.getElementById('viewerContent').innerHTML = html;
+      document.getElementById('docViewerModal').classList.add('active');
+    }
+
+    function saveDocViewerEdits() {
+      if (!currentEditingDocTarget || !currentEditingDocTarget.targetRef) return;
+
+      const pElem = document.getElementById('editDocPurpose');
+      const cElem = document.getElementById('editDocContent');
+      const eElem = document.getElementById('editDocEffect');
+
+      if (!currentEditingDocTarget.targetRef.doc) {
+        currentEditingDocTarget.targetRef.doc = {};
+      }
+
+      currentEditingDocTarget.targetRef.doc.purpose = pElem.innerText.trim();
+      currentEditingDocTarget.targetRef.doc.content = cElem.innerText.trim();
+      currentEditingDocTarget.targetRef.doc.effect = eElem.innerText.trim();
+
+      closeDocViewer();
+      triggerAutoSync(0);
+    }
+
+    function closeDocViewer() {
+      document.getElementById('docViewerModal').classList.remove('active');
+    }
+
+    // 꼭지사업 추가
+    function openAddTopModal() { document.getElementById('addTopModal').classList.add('active'); }
+    function closeAddTopModal() { document.getElementById('addTopModal').classList.remove('active'); }
+    function saveTopProject() {
+      const name = document.getElementById('newTopTitle').value.trim();
+      const fund = document.getElementById('newTopFund').value;
+      const b26 = parseNum(document.getElementById('newTopB26').value);
+      const b27 = parseNum(document.getElementById('newTopB27').value);
+      const desc = document.getElementById('newTopDesc').value.trim() || '신규 꼭지사업';
+
+      if (!name || b27 <= 0) {
+        alert('꼭지사업명과 요구액을 입력해주세요.');
+        return;
+      }
+
+      const newId = Date.now();
+      projectList.push({
+        id: newId,
+        name: name,
+        tag: "추가",
+        fund: fund,
+        b26: b26,
+        b27: b27,
+        desc: desc,
+        fixed: false,
+        doc: {
+          purpose: `${name} 운영을 통한 방과후돌봄 고도화`,
+          content: `• 사업내용: ${desc}\n• 소요예산: ${b27.toLocaleString()} 천원`,
+          effect: "학생 및 학부모 교육복지 체감도 극대화"
+        },
+        subProjects: []
+      });
+
+      selectedTab2Projects.add(newId.toString());
+
+      closeAddTopModal();
+      document.getElementById('newTopTitle').value = '';
+      document.getElementById('newTopB26').value = '0';
+      document.getElementById('newTopB27').value = '';
+      document.getElementById('newTopDesc').value = '';
+
+      triggerAutoSync(0);
+      renderProjectTable();
+    }
+
+    // KPI 카드 및 종합 대비표 동기화 (필터링된 금액 연동)
+    function syncTopKPIs(b26, b27) {
+      const isAll = selectedTab2Projects.size === projectList.length;
+      const f26 = isAll ? 259959837 : Math.round(b26 * 1.257); // 개별 필터 시 본예산 비율 반영 추정
+      const sup26 = isAll ? 53204588 : Math.max(0, f26 - b26);
+
+      const diffB26 = b27 - b26;
+      const rateB26 = b26 === 0 ? "순증" : ((diffB26 / b26) * 100).toFixed(1) + "%";
+      const diffF26 = b27 - f26;
+      const rateF26 = f26 === 0 ? "순증" : ((diffF26 / f26) * 100).toFixed(1) + "%";
+
+      document.getElementById('kpi-b26').innerText = b26.toLocaleString() + ' 천원';
+      document.getElementById('kpi-b26-eok').innerText = Math.round(b26 / 100000).toLocaleString() + ' 억 원';
+      document.getElementById('kpi-sup26').innerText = sup26.toLocaleString() + ' 천원';
+      document.getElementById('kpi-sup26-eok').innerText = Math.round(sup26 / 100000).toLocaleString() + ' 억 원';
+      document.getElementById('kpi-f26').innerText = f26.toLocaleString() + ' 천원';
+      document.getElementById('kpi-f26-eok').innerText = Math.round(f26 / 100000).toLocaleString() + ' 억 원';
+      document.getElementById('kpi-b27').innerText = b27.toLocaleString() + ' 천원';
+      document.getElementById('kpi-b27-eok').innerText = Math.round(b27 / 100000).toLocaleString() + ' 억 원';
+
+      document.getElementById('kpi-diff-b26').innerText = (diffB26 >= 0 ? '+' : '') + diffB26.toLocaleString() + ' 천원';
+      document.getElementById('kpi-diff-b26-eok').innerText = (diffB26 >= 0 ? '+' : '-') + Math.round(Math.abs(diffB26) / 100000).toLocaleString() + ' 억 (' + (diffB26 >= 0 && b26 > 0 ? '+' : '') + rateB26 + ')';
+      
+      document.getElementById('kpi-diff-f26').innerText = (diffF26 >= 0 ? '+' : '') + diffF26.toLocaleString() + ' 천원';
+      document.getElementById('kpi-diff-f26-eok').innerText = (diffF26 >= 0 ? '+' : '-') + Math.round(Math.abs(diffF26) / 100000).toLocaleString() + ' 억 (' + (diffF26 >= 0 && f26 > 0 ? '+' : '') + rateF26 + ')';
+
+      // 종합 대비표 연동
+      document.getElementById('summary-b26').innerText = b26.toLocaleString();
+      document.getElementById('summary-b26-eok').innerText = '(' + Math.round(b26 / 100000).toLocaleString() + ' 억 원)';
+      document.getElementById('summary-sup26').innerText = sup26.toLocaleString();
+      document.getElementById('summary-sup26-eok').innerText = '(' + Math.round(sup26 / 100000).toLocaleString() + ' 억 원)';
+      document.getElementById('summary-f26').innerText = f26.toLocaleString();
+      document.getElementById('summary-f26-eok').innerText = '(' + Math.round(f26 / 100000).toLocaleString() + ' 억 원)';
+      document.getElementById('summary-b27').innerText = b27.toLocaleString();
+      document.getElementById('summary-b27-eok').innerText = '(' + Math.round(b27 / 100000).toLocaleString() + ' 억 원)';
+
+      document.getElementById('summary-diff-b26').innerText = (diffB26 >= 0 ? '+' : '') + diffB26.toLocaleString();
+      document.getElementById('summary-diff-b26-eok').innerText = (diffB26 >= 0 ? '+' : '') + Math.round(diffB26 / 100000).toLocaleString() + ' 억 원 (' + (diffB26 >= 0 && b26 > 0 ? '+' : '') + rateB26 + ')';
+      document.getElementById('summary-diff-f26').innerText = (diffF26 >= 0 ? '+' : '') + diffF26.toLocaleString();
+      document.getElementById('summary-diff-f26-eok').innerText = (diffF26 >= 0 ? '+' : '') + Math.round(diffF26 / 100000).toLocaleString() + ' 억 원 (' + (diffF26 >= 0 && f26 > 0 ? '+' : '') + rateF26 + ')';
+
+      document.getElementById('doughnut-total-tag').innerText = '(선택 총액: ' + Math.round(b27 / 100000).toLocaleString() + ' 억 원)';
+    }
+
+    // 차트 업데이트 (선택된 사업만 필터링 반영)
+    function updateCharts() {
+      if (!projectChartInstance) return;
+
+      const filteredList = projectList.filter(p => selectedTab2Projects.has(p.id.toString()));
+
+      const totalB26 = filteredList.reduce((acc, p) => acc + p.b26 + (p.subProjects ? p.subProjects.reduce((sAcc, s) => sAcc + s.b26, 0) : 0), 0);
+      const totalB27 = filteredList.reduce((acc, p) => acc + p.b27 + (p.subProjects ? p.subProjects.reduce((sAcc, s) => sAcc + s.b27, 0) : 0), 0);
+      const isAll = selectedTab2Projects.size === projectList.length;
+      const f26 = isAll ? 259959837 : Math.round(totalB26 * 1.257);
+
+      if (diffChartInstance) {
+        diffChartInstance.data.datasets[0].data = [totalB26, f26];
+        diffChartInstance.data.datasets[1].data = [totalB27, totalB27];
+        diffChartInstance.data.datasets[2].data = [totalB27 - totalB26, totalB27 - f26];
+        diffChartInstance.update();
+      }
+
+      if (shareDoughnutInstance) {
+        shareDoughnutInstance.data.labels = filteredList.map(p => p.name);
+        shareDoughnutInstance.data.datasets[0].data = filteredList.map(p => p.b27 + (p.subProjects ? p.subProjects.reduce((sAcc, s) => sAcc + s.b27, 0) : 0));
+        shareDoughnutInstance.update();
+      }
+
+      projectChartInstance.data.labels = filteredList.map(p => p.name);
+      projectChartInstance.data.datasets[0].data = filteredList.map(p => p.b26 + (p.subProjects ? p.subProjects.reduce((sAcc, s) => sAcc + s.b26, 0) : 0));
+      projectChartInstance.data.datasets[1].data = filteredList.map(p => p.b27 + (p.subProjects ? p.subProjects.reduce((sAcc, s) => sAcc + s.b27, 0) : 0));
+      projectChartInstance.update();
+    }
+
+    // 초기화
+    window.addEventListener('DOMContentLoaded', () => {
+      const ctxDiff = document.getElementById('diffCompareChart').getContext('2d');
+      diffChartInstance = new Chart(ctxDiff, {
+        type: 'bar',
+        data: {
+          labels: ['2026년 본예산 기준 대비', '2026년 최종예산(현액) 기준 대비'],
+          datasets: [
+            { label: '2026년 기준 금액', data: [206755249, 259959837], backgroundColor: '#B1BEB7' },
+            { label: '2027년 본예산 요구액', data: [312366047, 312366047], backgroundColor: '#5D7A78' },
+            { label: '증감액 (+)', data: [105610798, 52406210], backgroundColor: '#E0927B' }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 28, left: 10, right: 10 } },
+          plugins: {
+            datalabels: {
+              anchor: 'end',
+              align: 'top',
+              offset: 2,
+              font: { size: 13, weight: 'bold' },
+              color: '#2F3E46',
+              formatter: (value) => Math.round(value / 100000).toLocaleString() + '억'
+            },
+            legend: { position: 'top', labels: { font: { size: 14 } } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${ctx.raw.toLocaleString()} 천원 (${Math.round(ctx.raw/100000)}억)`
+              }
+            }
+          },
+          scales: {
+            x: { ticks: { font: { size: 14, weight: 'bold' } } },
+            y: {
+              beginAtZero: true,
+              ticks: { font: { size: 13 }, callback: (val) => `${Math.round(val / 100000000)}천억` }
+            }
+          }
+        }
+      });
+
+      const ctxDoughnut = document.getElementById('shareDoughnut').getContext('2d');
+      shareDoughnutInstance = new Chart(ctxDoughnut, {
+        type: 'doughnut',
+        data: {
+          labels: projectList.map(p => p.name),
+          datasets: [{
+            data: projectList.map(p => p.b27),
+            backgroundColor: ['#5D7A78', '#E0927B', '#D09E57', '#B1BEB7', '#F8D4A2', '#E0AFAA', '#889C9A', '#9B8B7A', '#7A9B94'],
+            borderWidth: 2,
+            borderColor: '#FFFFFF'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            datalabels: {
+              color: '#FFFFFF',
+              font: { weight: 'bold', size: 13 },
+              formatter: (value, ctx) => {
+                const total = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                if (total === 0) return '';
+                const pct = ((value / total) * 100).toFixed(0);
+                const eok = Math.round(value / 100000);
+                return pct >= 6 ? `${eok}억\n(${pct}%)` : '';
+              },
+              textAlign: 'center'
+            },
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 13 }, padding: 8 } }
+          }
+        }
+      });
+
+      const ctxProject = document.getElementById('projectBarChart').getContext('2d');
+      projectChartInstance = new Chart(ctxProject, {
+        type: 'bar',
+        data: {
+          labels: projectList.map(p => p.name),
+          datasets: [
+            { label: '2026년 본예산 (천원)', data: projectList.map(p => p.b26), backgroundColor: '#B1BEB7' },
+            { label: '2027년 요구액 (천원)', data: projectList.map(p => p.b27), backgroundColor: '#E0927B' }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 25 } },
+          plugins: {
+            datalabels: {
+              anchor: 'end',
+              align: 'top',
+              offset: 1,
+              font: { size: 12, weight: 'bold' },
+              color: '#2F3E46',
+              formatter: (value) => value === 0 ? '' : Math.round(value / 100000) + '억'
+            },
+            legend: { labels: { font: { size: 14 } } }
+          },
+          scales: {
+            x: { ticks: { font: { size: 13 } } },
+            y: { ticks: { font: { size: 13 }, callback: (val) => `${Math.round(val / 100000000)}천억` } }
+          }
+        }
+      });
+
+      initRealtimeSync();
+    });
+  </script>
+</body>
+</html>

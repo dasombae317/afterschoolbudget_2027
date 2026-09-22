@@ -202,6 +202,7 @@
       gap: 8px;
       border-bottom: 2px solid var(--border-dark);
       margin-bottom: 16px;
+      flex-wrap: wrap;
     }
     .tab-btn {
       padding: 10px 22px;
@@ -274,10 +275,10 @@
       border-radius: 8px;
       border: 1px solid var(--border);
       background: #FFFFFF;
-      overflow: hidden;
+      overflow-x: auto;
       width: 100%;
     }
-    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 15px; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 15px; min-width: 800px; }
     thead th {
       background-color: #F4EFEB;
       color: #2F3E46;
@@ -315,15 +316,6 @@
     .eok-sub-block.diff-rose { color: #B56B58; }
     .eok-sub-block.hero-lily { color: var(--lilypad); }
 
-    .diff-pill {
-      display: inline-block;
-      padding: 2px 7px;
-      border-radius: 4px;
-      font-size: 15px;
-      font-weight: 800;
-    }
-    .diff-pill.up { background-color: #FDF1EE; color: #B23B1E; border: 1px solid #F6CEBF; }
-
     .editable-cell {
       outline: none;
       transition: background-color 0.15s, box-shadow 0.15s;
@@ -334,7 +326,6 @@
     .editable-cell:hover { background-color: #FFFBEB; box-shadow: 0 0 0 1px #FCD34D; }
     .editable-cell:focus { background-color: #FFFFFF; box-shadow: 0 0 0 2px var(--canyon-sunset); }
 
-    /* 주요 사업 물량 줄바꿈 지원 */
     .desc-multiline {
       white-space: pre-wrap !important;
       word-break: break-word;
@@ -649,6 +640,7 @@
     <div class="tab-bar">
       <button class="tab-btn active" onclick="switchTab(this, 'overview')">1. 예산 총괄 및 증감 분석</button>
       <button class="tab-btn" onclick="switchTab(this, 'projects')">2. 꼭지 사업별 요구 현황</button>
+      <button class="tab-btn" onclick="switchTab(this, '교부금현황')">3. 보통교부금 교부액 및 편성액 현황</button>
     </div>
 
     <!-- TAB 1: 예산 총괄 및 증감 분석 -->
@@ -791,6 +783,33 @@
                 </tr>
               </thead>
               <tbody id="projectTableBody">
+                <!-- 동적 렌더링 -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: 보통교부금 교부액 및 편성액 현황 (PDF 내용 기반) -->
+    <div id="교부금현황" class="tab-content">
+      <div class="dashboard-grid">
+        <div class="card col-12">
+          <div class="card-title">
+            <span>보통교부금 교부액 및 편성액 현황 명세표</span>
+            <span class="unit-tag">(단위: 천원 / 셀을 클릭하여 자유롭게 금액 수정 가능)</span>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:16%;">구분</th>
+                  <th class="text-right" style="width:28%;">교부액 (A)</th>
+                  <th class="text-right" style="width:28%;">편성액 (B)</th>
+                  <th class="text-right" style="width:28%;">편성비율 (B / A * 100)</th>
+                </tr>
+              </thead>
+              <tbody id="grantTableBody">
                 <!-- 동적 렌더링 -->
               </tbody>
             </table>
@@ -1051,16 +1070,28 @@
       }
     ];
 
+    // PDF(통합 문서 3.pdf) 기반 초기 데이터 구조 설정
+    let grantList = [
+      { id: 1, name: "(중등)방과후 학교", a: 14944699, b: 1108800 },
+      { id: 2, name: "자유 수강권", a: 34135668, b: 11646720 },
+      { id: 3, name: "초등돌봄 초1~2 맞춤형", a: 74395040, b: 81558464 },
+      { id: 4, name: "학교 선택돌봄", a: 47805818, b: 57937745 },
+      { id: 5, name: "학교 선택교육", a: 43451624, b: 3429194 },
+      { id: 6, name: "급·간식", a: 98971212, b: 0 },
+      { id: 7, name: "돌봄터 운영비", a: 1394112, b: 1522864 },
+      { id: 8, name: "돌봄 시설비", a: 29410000, b: 8883000 }
+    ];
+
     let projectList = [...initialProjectList];
     let selectedTab2Projects = new Set();
     let autoSaveTimeout = null;
 
-    // 수동 즉시 저장 버튼 (원클릭)
     function manualSaveToCloud() {
       if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
       setSyncStatus(true);
       budgetDataRef.set({
         list: projectList,
+        grantList: grantList,
         updatedAt: firebase.database.ServerValue.TIMESTAMP
       }).then(() => {
         setSyncStatus(false);
@@ -1072,13 +1103,13 @@
       });
     }
 
-    // 디바운스 실시간 자동 저장
     function triggerAutoSync(delay = 500) {
       setSyncStatus(true);
       if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
       autoSaveTimeout = setTimeout(() => {
         budgetDataRef.set({
           list: projectList,
+          grantList: grantList,
           updatedAt: firebase.database.ServerValue.TIMESTAMP
         }).then(() => {
           setSyncStatus(false);
@@ -1107,19 +1138,19 @@
       }
     }
 
-    // ==========================================
-    // 2. Realtime Database 실시간 리스너
-    // ==========================================
     function initRealtimeSync() {
       budgetDataRef.on('value', (snapshot) => {
         const val = snapshot.val();
-        if (val && val.list) {
-          projectList = val.list;
+        if (val) {
+          if (val.list) projectList = val.list;
+          if (val.grantList) grantList = val.grantList;
+
           if (selectedTab2Projects.size === 0) {
             projectList.forEach(p => selectedTab2Projects.add(p.id.toString()));
           }
           renderFilterCheckboxes();
           renderProjectTable();
+          renderGrantTable();
           setSyncStatus(false);
         } else {
           triggerAutoSync(0);
@@ -1209,7 +1240,68 @@
       return parseFloat(clean) || 0;
     }
 
-    // 꼭지사업 테이블 렌더링 (2026년 본예산, 2026년 최종예산 직접수정, 본예산/최종예산 각각 증감액·증감률 계산)
+    // 3번째 시트(보통교부금 교부액 및 편성액) 렌더링 함수
+    function renderGrantTable() {
+      const tbody = document.getElementById('grantTableBody');
+      tbody.innerHTML = '';
+
+      let totalA = 0;
+      let totalB = 0;
+
+      grantList.forEach((g, idx) => {
+        const aVal = g.a || 0;
+        const bVal = g.b || 0;
+        totalA += aVal;
+        totalB += bVal;
+
+        const ratio = aVal === 0 ? 0 : ((bVal / aVal) * 100).toFixed(2);
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td contenteditable="true" class="editable-cell" 
+              oninput="handleGrantFieldChange(${idx}, 'name', this.innerText)" 
+              onblur="handleGrantFieldChange(${idx}, 'name', this.innerText, true)"><strong>${g.name}</strong></td>
+          <td class="text-right">
+            <span contenteditable="true" class="editable-cell" 
+                  oninput="handleGrantNumChange(${idx}, 'a', this.innerText)" 
+                  onblur="handleGrantNumChange(${idx}, 'a', this.innerText, true)">${aVal.toLocaleString()}</span> 천원
+          </td>
+          <td class="text-right">
+            <span contenteditable="true" class="editable-cell" 
+                  oninput="handleGrantNumChange(${idx}, 'b', this.innerText)" 
+                  onblur="handleGrantNumChange(${idx}, 'b', this.innerText, true)">${bVal.toLocaleString()}</span> 천원
+          </td>
+          <td class="text-right" style="font-weight:700; color:var(--lilypad);">
+            ${ratio}%
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      const totalRatio = totalA === 0 ? 0 : ((totalB / totalA) * 100).toFixed(2);
+
+      const totalTr = document.createElement('tr');
+      totalTr.className = 'total-row';
+      totalTr.innerHTML = `
+        <td>소계</td>
+        <td class="text-right">${totalA.toLocaleString()} 천원</td>
+        <td class="text-right">${totalB.toLocaleString()} 천원</td>
+        <td class="text-right" style="color:var(--canyon-sunset);">${totalRatio}%</td>
+      `;
+      tbody.appendChild(totalTr);
+    }
+
+    function handleGrantFieldChange(idx, field, val, immediate = false) {
+      grantList[idx][field] = val;
+      triggerAutoSync(immediate ? 0 : 500);
+    }
+
+    function handleGrantNumChange(idx, field, val, immediate = false) {
+      grantList[idx][field] = parseNum(val);
+      triggerAutoSync(immediate ? 0 : 500);
+      if (immediate) renderGrantTable();
+    }
+
     function renderProjectTable() {
       const tbody = document.getElementById('projectTableBody');
       tbody.innerHTML = '';
@@ -1219,24 +1311,20 @@
       let filterTotalB27 = 0;
 
       projectList.forEach((p, pIdx) => {
-        // 세부사업 금액은 합계에 반영하지 않고 꼭지사업 고유 예산만 반영
         let pB26 = p.b26 || 0;
         let pF26 = (p.f26 !== undefined && p.f26 !== null) ? p.f26 : (p.b26 || 0);
         let pB27 = p.b27 || 0;
 
-        // 선택 필터에 포함된 경우만 합산 및 렌더링
         if (!selectedTab2Projects.has(p.id.toString())) return;
 
         filterTotalB26 += pB26;
         filterTotalF26 += pF26;
         filterTotalB27 += pB27;
 
-        // 1) 2026년 본예산 대비 증감액 및 증감률
         const diffB26 = pB27 - pB26;
         const rateB26 = pB26 === 0 ? "순증" : ((diffB26 / pB26) * 100).toFixed(1) + "%";
         const isUpB26 = diffB26 >= 0;
 
-        // 2) 2026년 최종예산 대비 증감액 및 증감률
         const diffF26 = pB27 - pF26;
         const rateF26 = pF26 === 0 ? "순증" : ((diffF26 / pF26) * 100).toFixed(1) + "%";
         const isUpF26 = diffF26 >= 0;
@@ -1372,7 +1460,6 @@
         }
       });
 
-      // 합계행 (필터링된 금액 기준 합산)
       const totalDiffB26 = filterTotalB27 - filterTotalB26;
       const totalRateB26 = filterTotalB26 === 0 ? "순증" : ((totalDiffB26 / filterTotalB26) * 100).toFixed(1) + "%";
       const totalIsUpB26 = totalDiffB26 >= 0;
@@ -1413,14 +1500,10 @@
       `;
       tbody.appendChild(totalTr);
 
-      // 상단 KPI 카드 및 차트도 선택된 필터 합산 금액으로 동기화
       syncTopKPIs(filterTotalB26, filterTotalF26, filterTotalB27);
       updateCharts();
     }
 
-    // ==========================================
-    // 3. 인라인 편집 및 실시간 자동 저장
-    // ==========================================
     function handleTopProjectFieldChange(pIdx, field, val, immediate = false) {
       projectList[pIdx][field] = val;
       triggerAutoSync(immediate ? 0 : 500);
@@ -1465,7 +1548,6 @@
       }
     }
 
-    // 세부사업 추가 모달
     function openAddSubModal(parentId) {
       const parent = projectList.find(p => p.id === parentId);
       if (!parent) return;
@@ -1523,7 +1605,6 @@
       renderProjectTable();
     }
 
-    // 사업설명서 열람 및 수정
     let currentEditingDocTarget = null;
 
     function viewDoc(type, id, parentId) {
@@ -1617,7 +1698,6 @@
       document.getElementById('docViewerModal').classList.remove('active');
     }
 
-    // 꼭지사업 추가
     function openAddTopModal() { document.getElementById('addTopModal').classList.add('active'); }
     function closeAddTopModal() { document.getElementById('addTopModal').classList.remove('active'); }
     function saveTopProject() {
@@ -1665,7 +1745,6 @@
       renderProjectTable();
     }
 
-    // KPI 카드 및 종합 대비표 동기화 (본예산, 최종예산, 2027요구액 실시간 자동 합산 반영)
     function syncTopKPIs(b26, f26, b27) {
       const sup26 = Math.max(0, f26 - b26);
 
@@ -1674,7 +1753,6 @@
       const diffF26 = b27 - f26;
       const rateF26 = f26 === 0 ? "순증" : ((diffF26 / f26) * 100).toFixed(1) + "%";
 
-      // 상단 KPI 카드 업데이트
       document.getElementById('kpi-b26').innerText = b26.toLocaleString() + ' 천원';
       document.getElementById('kpi-b26-eok').innerText = Math.round(b26 / 100000).toLocaleString() + ' 억 원';
       document.getElementById('kpi-sup26').innerText = sup26.toLocaleString() + ' 천원';
@@ -1690,7 +1768,6 @@
       document.getElementById('kpi-diff-f26').innerText = (diffF26 >= 0 ? '+' : '') + diffF26.toLocaleString() + ' 천원';
       document.getElementById('kpi-diff-f26-eok').innerText = (diffF26 >= 0 ? '+' : '-') + Math.round(Math.abs(diffF26) / 100000).toLocaleString() + ' 억 (' + (diffF26 >= 0 && f26 > 0 ? '+' : '') + rateF26 + ')';
 
-      // 종합 대비표 업데이트
       document.getElementById('summary-b26').innerText = b26.toLocaleString();
       document.getElementById('summary-b26-eok').innerText = '(' + Math.round(b26 / 100000).toLocaleString() + ' 억 원)';
       document.getElementById('summary-sup26').innerText = sup26.toLocaleString();
@@ -1708,7 +1785,6 @@
       document.getElementById('doughnut-total-tag').innerText = '(선택 총액: ' + Math.round(b27 / 100000).toLocaleString() + ' 억 원)';
     }
 
-    // 차트 업데이트 (선택된 사업만 필터링 반영)
     function updateCharts() {
       if (!projectChartInstance) return;
 
@@ -1737,7 +1813,6 @@
       projectChartInstance.update();
     }
 
-    // 초기화
     window.addEventListener('DOMContentLoaded', () => {
       const ctxDiff = document.getElementById('diffCompareChart').getContext('2d');
       diffChartInstance = new Chart(ctxDiff, {
@@ -1784,7 +1859,7 @@
             },
             y: {
               beginAtZero: true,
-              grace: '30%', // 상단 30% 여유 높이로 범례와 숫자 겹치지 않음
+              grace: '30%',
               ticks: {
                 font: { size: 13 },
                 stepSize: 50000000,
